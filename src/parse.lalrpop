@@ -1,10 +1,11 @@
-use crate::ast::{Type, Path, Reference, Expr, BinOp, Lifetime};
+use crate::ast::Exp;
 use crate::error::NoUserError;
-use crate::token::Token;
+use crate::token::{Token, Keyword};
 use crate::span::Span;
-use proc_macro::Literal;
 
 grammar;
+
+// Tokens
 
 extern {
     type Error = NoUserError;
@@ -16,73 +17,34 @@ extern {
         ")" => Token::Close(proc_macro::Delimiter::Parenthesis),
 
         // The punctuation needed by our grammar
-        "+" => Token::Punct('+'),
-        "-" => Token::Punct('-'),
-        "*" => Token::Punct('*'),
-        "/" => Token::Punct('/'),
-        "&" => Token::Punct('&'),
-        ":" => Token::Punct(':'),
-        "'" => Token::Punct('\''),
+        "λ" => Token::Keyword(Keyword::Lambda),
+        "." => Token::Punct('.'),
         Punct => Token::Punct(<char>),
         Joint => Token::Joint,
 
-        // The keywords needed by our grammar
-        "mut" => Token::Keyword(crate::token::Keyword::Mut),
-
         // Other terminals in the grammar
         Ident => Token::Ident(<proc_macro::Ident>),
-        Literal => Token::Literal(<Literal>),
     }
 }
 
-pub Type: Box<Type> = {
-    Path => Box::new(Type::Path(<>)),
-    Reference => Box::new(Type::Reference(<>)),
+// Macros
+
+Box<T>: Box<T> = T => Box::new(<>);
+
+// Parser
+
+pub Exp: Exp = {
+    <@L> "λ" <Ident> "." <Box<Exp>> => Exp::Abs(<>),
+    Exp1,
 };
 
-Path: Path = {
-    <v:(<Ident> ":" Joint ":")*> <e:Ident> => {
-        let mut v = v;
-        v.push(e);
-        Path { segments: v }
-    }
+Exp1: Exp = {
+    @L Box<Exp1> Box<Exp2> => Exp::App(<>),
+    Exp2,
 };
 
-Reference: Reference = {
-    "&" <lifetime:Lifetime?> <mutable:Mutable> <elem:Type> => Reference {<>}
+Exp2: Exp = {
+    @L Ident => Exp::Var(<>),
+    "(" <Exp> ")"
 };
 
-Mutable: bool = {
-    "mut" => true,
-    => false,
-};
-
-pub Expr: Box<Expr> = {
-    Expr ExprOp Factor => Box::new(Expr::Binary(<>)),
-    Factor,
-};
-
-ExprOp: BinOp = {
-    "+" => BinOp::Add,
-    "-" => BinOp::Sub,
-};
-
-Factor: Box<Expr> = {
-    Factor FactorOp Component => Box::new(Expr::Binary(<>)),
-    Component,
-};
-
-FactorOp: BinOp = {
-    "*" => BinOp::Mul,
-    "/" => BinOp::Div,
-};
-
-Component: Box<Expr> = {
-    Literal => Box::new(Expr::Lit(<>)),
-    Path => Box::new(Expr::Path(<>)),
-    "(" <Expr> ")",
-};
-
-Lifetime: Lifetime = {
-    <span:@L> "'" Joint <ident:Ident> => Lifetime { span, ident },
-};

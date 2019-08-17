@@ -1,30 +1,26 @@
+#![feature(proc_macro_span)]
 #![feature(proc_macro_diagnostic)]
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
-    clippy::empty_enum,
-    clippy::match_same_arms,
-    clippy::module_name_repetitions,
-    clippy::use_self
+   clippy::empty_enum,
+   clippy::match_same_arms,
+   clippy::module_name_repetitions,
+   clippy::use_self
 )]
 
 extern crate proc_macro;
-
+use lalrpop_util::lalrpop_mod;
 mod ast;
 mod cursor;
 mod error;
-mod sexpr;
+mod exp;
 mod span;
 mod token;
-
-mod parse {
-    #![allow(clippy::all, clippy::pedantic)]
-
-    include!(concat!(env!("OUT_DIR"), "/parse.rs"));
-}
+lalrpop_mod!(parse);
 
 use crate::cursor::Cursor;
 use crate::error::NoUserError;
-use crate::parse::{ExprParser, TypeParser};
+use crate::parse::ExpParser;
 use crate::span::Span;
 use crate::token::Token;
 use lalrpop_util::ParseError;
@@ -32,28 +28,13 @@ use proc_macro::{Delimiter, Group, Literal, TokenStream, TokenTree};
 use std::iter::{self, FromIterator};
 
 #[proc_macro]
-pub fn s_type(input: TokenStream) -> TokenStream {
-    match TypeParser::new().parse(Cursor::new(input)) {
-        Ok(t) => string_literal(&t.to_string()),
-        Err(err) => parse_error(err),
-    }
-}
-
-#[proc_macro]
-pub fn s_expr(input: TokenStream) -> TokenStream {
-    match ExprParser::new().parse(Cursor::new(input)) {
-        Ok(e) => string_literal(&e.to_string()),
-        Err(err) => parse_error(err),
-    }
-}
-
-fn string_literal(s: &str) -> TokenStream {
-    let lit = Literal::string(s);
-    TokenStream::from_iter(iter::once(TokenTree::Literal(lit)))
-}
-
-fn parse_error(err: ParseError<Span, Token, NoUserError>) -> TokenStream {
-    error::emit(err);
-    let group = Group::new(Delimiter::Brace, TokenStream::new());
-    TokenStream::from_iter(iter::once(TokenTree::Group(group)))
+pub fn exp(input: TokenStream) -> TokenStream {
+    let tt = match ExpParser::new().parse(Cursor::new(input)) {
+        Ok(ast) => TokenTree::Literal(Literal::string(&ast.to_string())),
+        Err(err) => {
+            error::emit(err);
+            TokenTree::Group(Group::new(Delimiter::Brace, TokenStream::new()))
+        }
+    };
+    TokenStream::from_iter(iter::once(tt))
 }

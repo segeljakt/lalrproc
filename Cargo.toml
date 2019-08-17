@@ -1,22 +1,17 @@
 [package]
-name = "lalrproc"
-version = "0.0.5"
-authors = ["David Tolnay <dtolnay@gmail.com>"]
+name = "lambda"
+version = "0.0.1"
+authors = ["Klas Segeljakt <klasseg@kth.se>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
-description = "Procedural macro built on LALRPOP"
-repository = "https://github.com/dtolnay/lalrproc"
-documentation = "https://github.com/dtolnay/lalrproc"
 build = "build.rs"
 
 [lib]
 proc-macro = true
 
 [build-dependencies]
-lalrpop = "0.16"
+lalrpop = "0.17.1"
 
 [dependencies]
-lalrpop-util = "0.16"
-
-[badges]
-travis-ci = { repository = "dtolnay/lalrproc" }
+lalrpop-util = "0.17.1"
+regex = "1.2.1"

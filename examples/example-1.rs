@@ -2,8 +2,7 @@
 
 use lalrproc::exp;
 
-#[test]
-fn test1() {
+fn main() {
     exp! {
         # hello
         # there

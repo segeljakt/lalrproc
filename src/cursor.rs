@@ -1,28 +1,71 @@
 use crate::span::Span;
 use crate::token::{Keyword, Token};
 use proc_macro::token_stream::IntoIter as TokenIter;
-use proc_macro::{self, Delimiter, Ident, Spacing, TokenStream, TokenTree};
+use proc_macro::{self, Delimiter, Ident, Punct, Spacing, TokenStream, TokenTree};
+use std::iter::Peekable;
 
 pub struct Cursor {
     stack: Vec<Frame>,
     joint: Option<Span>,
+    tail: Option<Ident>,
 }
 
 struct Frame {
-    iter: TokenIter,
+    iter: Peekable<TokenIter>,
     span: Span,
     delimiter: Delimiter,
+}
+
+impl Frame {
+    fn new(stream: TokenStream, span: Span, delimiter: Delimiter) -> Self {
+        Frame {
+            iter: stream.into_iter().peekable(),
+            span,
+            delimiter,
+        }
+    }
 }
 
 impl Cursor {
     pub fn new(input: TokenStream) -> Self {
         Cursor {
-            stack: vec![Frame {
-                iter: input.into_iter(),
-                span: Span(proc_macro::Span::call_site()),
-                delimiter: Delimiter::None,
-            }],
+            stack: vec![Frame::new(input, Span::default(), Delimiter::None)],
             joint: None,
+            tail: None,
+        }
+    }
+    /// Drop all tokens on the specified line
+    fn strip_line_comment(&mut self) {
+        if let Some(mut top) = self.stack.pop() {
+            if let Some(TokenTree::Punct(tt)) = top.iter.peek() {
+                if is_comment(tt) {
+                    let mut line = tt.span().start().line;
+                    top.iter.next();
+                    self.stack.push(top);
+                    while let Some(mut top) = self.stack.pop() {
+                        while let Some(tt) = top.iter.peek() {
+                            if tt.span().start().line == line {
+                                top.iter.next();
+                            } else if let TokenTree::Punct(tt) = tt {
+                                if is_comment(tt) {
+                                    line = tt.span().start().line;
+                                    top.iter.next();
+                                } else {
+                                    self.stack.push(top);
+                                    return;
+                                }
+                            } else {
+                                self.stack.push(top);
+                                return;
+                            }
+                        }
+                    }
+                } else {
+                    self.stack.push(top);
+                }
+            } else {
+                self.stack.push(top);
+            }
         }
     }
 }
@@ -32,101 +75,70 @@ impl Iterator for Cursor {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(span) = self.joint.take() {
-            return Some((span, Token::Joint, span));
-        }
-
-        let mut top = self.stack.pop()?;
-        match top.iter.next() {
-            Some(tt) => {
+            Some((span, Token::Joint, span))
+        } else if let Some(tail) = self.tail.take() {
+            let span = Span(tail.span());
+            Some((span, Token::Ident(tail), span))
+        } else {
+            self.strip_line_comment();
+            let mut top = self.stack.pop()?;
+            if let Some(tt) = top.iter.next() {
                 let span = Span(tt.span());
                 self.stack.push(top);
                 let token = match tt {
-                    TokenTree::Group(tt) => {
-                        let delimiter = tt.delimiter();
-                        let iter = tt.stream().into_iter();
-                        self.stack.push(Frame {
-                            iter,
-                            span,
-                            delimiter,
-                        });
+                    TokenTree::Group(group) => {
+                        let delimiter = group.delimiter();
+                        self.stack.push(Frame::new(group.stream(), span, delimiter));
                         Token::Open(delimiter)
                     }
-                    TokenTree::Punct(tt) => {
-                        if let Spacing::Joint = tt.spacing() {
+                    TokenTree::Punct(punct) => {
+                        if let Spacing::Joint = punct.spacing() {
                             self.joint = Some(span);
                         }
-                        Token::Punct(tt.as_char())
+                        Token::Punct(punct.as_char())
                     }
-                    TokenTree::Ident(ident) => ident_to_token(ident),
+                    TokenTree::Ident(ident) => {
+                        if let Some((kw, tail)) = keyword(&ident) {
+                            self.tail = tail;
+                            Token::Keyword(kw)
+                        } else {
+                            Token::Ident(ident)
+                        }
+                    }
                     TokenTree::Literal(lit) => Token::Literal(lit),
                 };
                 Some((span, token, span))
-            }
-            None => {
-                if self.stack.is_empty() {
-                    None
-                } else {
-                    Some((top.span, Token::Close(top.delimiter), top.span))
-                }
+            } else if self.stack.is_empty() {
+                None
+            } else {
+                Some((top.span, Token::Close(top.delimiter), top.span))
             }
         }
     }
 }
 
-fn ident_to_token(ident: Ident) -> Token {
-    match &*ident.to_string() {
-        "abstract" => Token::Keyword(Keyword::Abstract),
-        "alignof" => Token::Keyword(Keyword::Alignof),
-        "as" => Token::Keyword(Keyword::As),
-        "become" => Token::Keyword(Keyword::Become),
-        "box" => Token::Keyword(Keyword::Box),
-        "break" => Token::Keyword(Keyword::Break),
-        "const" => Token::Keyword(Keyword::Const),
-        "continue" => Token::Keyword(Keyword::Continue),
-        "crate" => Token::Keyword(Keyword::Crate),
-        "do" => Token::Keyword(Keyword::Do),
-        "else" => Token::Keyword(Keyword::Else),
-        "enum" => Token::Keyword(Keyword::Enum),
-        "extern" => Token::Keyword(Keyword::Extern),
-        "false" => Token::Keyword(Keyword::False),
-        "final" => Token::Keyword(Keyword::Final),
-        "fn" => Token::Keyword(Keyword::Fn),
-        "for" => Token::Keyword(Keyword::For),
-        "if" => Token::Keyword(Keyword::If),
-        "impl" => Token::Keyword(Keyword::Impl),
-        "in" => Token::Keyword(Keyword::In),
-        "let" => Token::Keyword(Keyword::Let),
-        "loop" => Token::Keyword(Keyword::Loop),
-        "macro" => Token::Keyword(Keyword::Macro),
-        "match" => Token::Keyword(Keyword::Match),
-        "mod" => Token::Keyword(Keyword::Mod),
-        "move" => Token::Keyword(Keyword::Move),
-        "mut" => Token::Keyword(Keyword::Mut),
-        "offsetof" => Token::Keyword(Keyword::Offsetof),
-        "override" => Token::Keyword(Keyword::Override),
-        "priv" => Token::Keyword(Keyword::Priv),
-        "proc" => Token::Keyword(Keyword::Proc),
-        "pub" => Token::Keyword(Keyword::Pub),
-        "pure" => Token::Keyword(Keyword::Pure),
-        "ref" => Token::Keyword(Keyword::Ref),
-        "return" => Token::Keyword(Keyword::Return),
-        "Self" => Token::Keyword(Keyword::UpperSelf),
-        "self" => Token::Keyword(Keyword::LowerSelf),
-        "sizeof" => Token::Keyword(Keyword::Sizeof),
-        "static" => Token::Keyword(Keyword::Static),
-        "struct" => Token::Keyword(Keyword::Struct),
-        "super" => Token::Keyword(Keyword::Super),
-        "trait" => Token::Keyword(Keyword::Trait),
-        "true" => Token::Keyword(Keyword::True),
-        "type" => Token::Keyword(Keyword::Type),
-        "typeof" => Token::Keyword(Keyword::Typeof),
-        "unsafe" => Token::Keyword(Keyword::Unsafe),
-        "unsized" => Token::Keyword(Keyword::Unsized),
-        "use" => Token::Keyword(Keyword::Use),
-        "virtual" => Token::Keyword(Keyword::Virtual),
-        "where" => Token::Keyword(Keyword::Where),
-        "while" => Token::Keyword(Keyword::While),
-        "yield" => Token::Keyword(Keyword::Yield),
-        _other => Token::Ident(ident),
+/// Tries to convert ident into a keyword
+/// Certain keywords can be followed by others
+fn keyword(ident: &Ident) -> Option<(Keyword, Option<Ident>)> {
+    let span = ident.span();
+    let s = ident.to_string();
+    match s.chars().next() {
+        Some(c) => {
+            let kw = match c {
+                'λ' => Keyword::Lambda,
+                _ => None?,
+            };
+            let tail = &s[c.len_utf8()..];
+            if tail.is_empty() {
+                Some((kw, None))
+            } else {
+                Some((kw, Some(Ident::new(&tail, span))))
+            }
+        }
+        None => None,
     }
+}
+
+fn is_comment(punct: &Punct) -> bool {
+    punct.as_char() == '#'
 }

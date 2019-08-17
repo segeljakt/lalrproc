@@ -20,7 +20,7 @@ pub fn emit(err: ParseError<Span, Token, NoUserError>) {
                 .emit();
         }
         ParseError::UnrecognizedToken {
-            token: Some((span, token, _)),
+            token: (span, token, _),
             expected,
         } => {
             let mut diagnostic = span
@@ -32,10 +32,7 @@ pub fn emit(err: ParseError<Span, Token, NoUserError>) {
             }
             diagnostic.emit();
         }
-        ParseError::UnrecognizedToken {
-            token: None,
-            expected,
-        } => {
+        ParseError::UnrecognizedEOF { location, expected } => {
             let span = proc_macro::Span::call_site();
             let mut diagnostic = span
                 .error("failed to parse macro input")
