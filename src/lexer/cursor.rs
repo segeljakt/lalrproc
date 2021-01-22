@@ -120,22 +120,20 @@ impl Iterator for Cursor {
 /// Tries to convert ident into a keyword
 /// Certain keywords can be followed by others
 fn keyword(ident: &Ident) -> Option<(Keyword, Option<Ident>)> {
-    let span = ident.span();
     let s = ident.to_string();
-    match s.chars().next() {
-        Some(c) => {
-            let kw = match c {
-                'λ' => Keyword::Lambda,
-                _ => None?,
-            };
-            let tail = &s[c.len_utf8()..];
-            if tail.is_empty() {
-                Some((kw, None))
-            } else {
-                Some((kw, Some(Ident::new(&tail, span))))
-            }
+    if let Some(c) = s.chars().next() {
+        let kw = match c {
+            'λ' => Keyword::Lambda,
+            _ => None?,
+        };
+        let tail = &s[c.len_utf8()..];
+        if tail.is_empty() {
+            Some((kw, None))
+        } else {
+            Some((kw, Some(Ident::new(&tail, ident.span()))))
         }
-        None => None,
+    } else {
+        None
     }
 }
 

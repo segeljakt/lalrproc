@@ -2,10 +2,10 @@
 #![feature(proc_macro_diagnostic)]
 #![deny(clippy::all, clippy::pedantic)]
 #![allow(
-   clippy::empty_enum,
-   clippy::match_same_arms,
-   clippy::module_name_repetitions,
-   clippy::use_self
+    clippy::empty_enum,
+    clippy::match_same_arms,
+    clippy::module_name_repetitions,
+    clippy::use_self
 )]
 
 extern crate proc_macro;

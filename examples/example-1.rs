@@ -1,6 +1,6 @@
 #![feature(proc_macro_hygiene)]
 
-use lalrproc::exp;
+use lambda::exp;
 
 fn main() {
     exp! {
